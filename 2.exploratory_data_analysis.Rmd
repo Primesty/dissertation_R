@@ -1,0 +1,297 @@
+---
+title: "exploratory_data_analysis"
+author: "M_Raess"
+date: "5/27/2017"
+output: pdf_document
+---
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Exploratory data analysis
+
+```{r read in data, eval=TRUE, echo=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+
+diss_data <- readRDS("diss_data.rds")
+
+tweet_data_ger <- readRDS("tweet_data_ger.rds")
+```
+
+## Diss data
+
+```{r summary str, echo=TRUE, eval=TRUE}
+
+#summary(diss_data)
+
+#str(diss_data)
+
+diss_data$alt_zip <- unlist(diss_data$alt_zip)
+
+summary(diss_data)
+
+str(diss_data)
+
+```
+
+## Correlation matrix for all variables
+
+```{r cors, echo=TRUE, message=FALSE}
+
+library(Hmisc)
+
+diss_data_cor <- diss_data %>% select(e, a, c, n, o, time_twitter_min, age, tweet_num, hash_dens, emoji_dens, tt_50) %>% na.omit ## vars need to be completed by imputation...
+
+rcorr(as.matrix(diss_data_cor, type= "pearson")) # creates a correlation matrix
+
+cor <- cor(diss_data_cor)
+
+# Create correlation plots
+
+library(qgraph)
+library(corrplot)
+
+#now plot a graph of the correlation matrix
+
+qgraph(cor, shape="circle", posCol="darkgreen", negCol="darkred", layout="groups", vsize=10)
+
+corrplot(cor, method="square")
+
+```
+
+Neg. cor between e and time_twitter_min - maybe not rich get richer but social compensation hypothesis??
+
+### Years on Twitter
+
+```{r years_twitter, echo=TRUE}
+
+ggplot(diss_data) + geom_bar(aes(x = years_twitter, fill = gender), position = "dodge") +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+```
+
+### Check Twitter how many times
+
+```{r check_twitter, echo=TRUE}
+
+ggplot(diss_data) + geom_bar(aes(x = check_twitter, fill = gender), position = "dodge") +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+```
+
+### Minutes on Twitter/day
+
+```{r time_twitter_min, echo=TRUE}
+
+range(diss_data$time_twitter_min)
+
+ggplot(diss_data) + geom_histogram(aes(time_twitter_min, ..density..), binwidth = 20) +
+        geom_density(aes(x = time_twitter_min, y = ..density..),col = "steelblue", 
+                     lwd = 1, fill = "steelblue", alpha = 0.5) +
+        stat_function(fun = dnorm, color = "goldenrod", lwd = 1, args = list(mean = mean(diss_data$time_twitter_min), sd = sd(diss_data$time_twitter_min)))
+
+```
+
+
+### Distribution by gender
+
+```{r gender, echo=TRUE}
+
+library(ggplot2)
+source("theme_matt.R")
+
+ggplot(diss_data) + geom_bar(aes(x = gender, fill = function_hash))
+
+ggplot(diss_data) + geom_bar(aes(x = gender, y = ..prop.., group = 1))
+
+ggplot(diss_data) + geom_boxplot(aes(gender, age, fill = gender), notch = TRUE) + 
+        geom_hline(mapping = aes(yintercept = mean(age)), col = "red") +
+        geom_hline(mapping = aes(yintercept = median(age)), col = "yellow") +
+        coord_flip() + theme_minimal() + 
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+
+ggplot(diss_data) + geom_boxplot(aes(gender, tweet_num))
+
+ggplot(diss_data) + geom_point(aes(age, tweet_num)) + geom_smooth(aes(age, tweet_num), method = "loess")
+
+ggplot(diss_data) + geom_point(aes(age, tt_50, col = gender)) +
+        scale_color_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender") +
+        ggtitle("Time to 50 tweets/age/gender") +
+        geom_smooth(aes(age, tt_50, col = gender), se = FALSE) +
+        theme_matt()
+
+ggplot(diss_data) + geom_point(aes(age, hash_dens, col = gender)) +
+        scale_color_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender") +
+        ggtitle("Hashtag density across age/gender") +
+        geom_smooth(aes(age, hash_dens, col = gender), se = FALSE) +
+        theme_matt()
+
+ggplot(diss_data, aes(age, emoji_dens, col = gender, shape = gender)) + 
+        geom_point(size = 2) +
+        scale_color_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender") +
+        scale_shape_discrete(name = "Gender") +
+        geom_smooth(method = "loess", se = FALSE) +
+        ggtitle("Emoji density across age/gender") +
+        theme_matt()
+
+library(plotly)
+
+plot <- plot_ly(diss_data, x = ~age, y = ~tweet_num, z = ~hash_dens,
+                marker = list(color = ~emoji_dens, showscale = TRUE)) %>% 
+        add_markers() %>% 
+        layout(scene = list(xaxis = list(title = 'Age'),
+                            yaxis = list(title = 'Tweet_num'),
+                            zaxis = list(title = 'Hash_dens')),
+               annotations = list(text = "Emoji_dens",
+                                  xref = "paper",
+                                  yref = "paper",
+                                  xref = "Age",
+                                  yref = "Tweet_num",
+                                  showarrow = FALSE
+                                  ))
+
+```
+
+Chi-Square for gender and hashtag function
+
+```{r chi-square, echo=TRUE}
+
+library(MASS)
+
+data_sub <- diss_data %>% filter(function_hash == "both" | function_hash == "tag") %>% droplevels()
+
+tbl <- table(data_sub$gender, data_sub$function_hash)
+
+chisq.test(tbl)
+
+```
+
+Gender and hashtag are independent and thus not related in some way...
+
+### Age
+
+```{r age, echo=TRUE}
+
+ggplot(diss_data) + geom_histogram(aes(age, ..density..), col = "lightgrey", binwidth = 20, alpha = 0.4) +
+        geom_density(aes(x = age, y = ..density..),col = "steelblue", 
+                     lwd = 1, fill = "steelblue", alpha = 0.5) +
+        stat_function(fun = dnorm, color = "goldenrod", lwd = 1, args = list(mean = mean(diss_data$age), sd = sd(diss_data$age))) +
+        theme_matt()
+
+```
+
+
+### Relationship
+
+```{r relationship, echo=TRUE}
+
+ggplot(diss_data) + geom_bar(aes(x = relationship, fill = gender), position = "dodge") +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+```
+
+### Education 1 + 2
+
+```{r edu, echo=TRUE}
+
+ggplot(diss_data) + geom_bar(aes(x = edu, fill = gender), position = "dodge") +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+ggplot(diss_data) + geom_bar(aes(x = edu2, fill = gender), position = "dodge") +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+```
+
+### Employ
+
+```{r employ, echo=TRUE}
+
+ggplot(diss_data) + geom_bar(aes(x = employ, fill = gender), position = "dodge") +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+```
+
+### Check out distributions of tweet_num, hashtag density, and emoji density
+
+```{r densities, echo=TRUE}
+
+library(ggplot2)
+
+ggplot(diss_data) + geom_histogram(aes(tweet_num, ..density..), binwidth = 20) +
+        geom_density(aes(x = tweet_num, y = ..density..),col = "steelblue", lwd = 1, 
+                     fill = "steelblue", alpha = 0.5) +
+        stat_function(fun = dnorm, color = "goldenrod", lwd = 1, args = list(mean = mean(diss_data$tweet_num), sd = sd(diss_data$tweet_num)))
+
+
+```
+
+This approximates a negative binomial distribution (count data!!!) (maybe poisson...but is more general)
+
+Upon further inspection, part_id25 turned out to be a marketing-only twitter account (based on tweet_num and tweet texts and most frequent hashtag "gratismail"). It was thus removed from the dataset...
+
+```{r subsetI, echo=TRUE}
+
+diss_data <- diss_data %>% filter(!part_id == "25") # reduces part num to 62
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+tweet_data_ger <- tweet_data_ger %>% filter(!part_id == "25") # reduces tweets to 19772
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+ggplot(diss_data) + geom_histogram(aes(tweet_num, ..density..), binwidth = 20) +
+        geom_density(aes(x = tweet_num, y = ..density..),col = "steelblue", lwd = 1, 
+                     fill = "steelblue", alpha = 0.5) +
+        stat_function(fun = dnorm, color = "goldenrod", lwd = 1, args = list(mean = mean(diss_data$tweet_num), sd = sd(diss_data$tweet_num)))
+
+```
+
+
+
+```{r densitiesIV, echo=TRUE, message=FALSE}
+
+library(ggplot2)
+
+ggplot(diss_data) + geom_histogram(aes(emoji_dens, ..density..), binwidth = 20) +
+        geom_density(aes(x = emoji_dens, y = ..density..),col = "steelblue", lwd = 1, 
+                     fill = "steelblue", alpha = 0.5) +
+        stat_function(fun = dnorm, color = "goldenrod", lwd = 1, args = list(mean = mean(diss_data$emoji_dens), sd = sd(diss_data$emoji_dens)))
+
+```
+
+### Check out dist of personality scores
+
+```{r personality, echo=TRUE, message=FALSE}
+
+library(tidyverse)
+
+diss_data_gather <- diss_data %>% gather(`e`, `a`, `c`, `n`, `o`, key = "p_type", value = "bfi10_score") %>% arrange(part_id)
+
+ggplot(diss_data_gather) + geom_boxplot(aes(p_type, bfi10_score, fill = gender)) + 
+        stat_summary(mapping = aes(p_type, bfi10_score, fill = gender), 
+                     dfun.y = mean, colour="orange", geom="point", shape=16, size=2, 
+                     position = position_dodge(width = 0.75)) +
+        theme_minimal() + 
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender")
+
+ggplot(diss_data) + geom_point(aes(e, tweet_num))
+
+ggplot(diss_data) + geom_point(aes(a, tweet_num))
+
+ggplot(diss_data) + geom_point(aes(c, tweet_num))
+
+ggplot(diss_data) + geom_point(aes(n, tweet_num))
+
+ggplot(diss_data) + geom_point(aes(o, tweet_num))
+
+## tweet_num per part is count data - poisson...
+
+```
+
+

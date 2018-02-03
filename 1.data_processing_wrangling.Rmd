@@ -1,0 +1,528 @@
+---
+title: "Diss_data_collection_cleaning"
+author: "M_Raess"
+date: "5/20/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Collecting the data from Qualtrics - 
+
+Now manually (might be automatic in the future via API - see code)
+
+```{r qualtRics, eval=FALSE, echo=TRUE}
+library(qualtRics)
+
+registerApiKey()
+
+twitter_survey <- getSurvey(your_survey_id_here, "https://bsu.qualtrics.com", format = "csv", useLabels = FALSE,
+                            convertStandardColumns = TRUE, lastResponseId = NULL, startDate = NULL,
+                            endDate = NULL, save_dir = NULL, force_request = FALSE,
+                            verbose = FALSE)
+
+
+## BSU has no API yet...
+```
+
+But BSU has no API access (yet).
+
+## Qualtrics data read-in
+
+```{r packages, eval=FALSE, echo=TRUE}
+library(tidyverse)
+library(forcats)
+```
+
+Frist, data were read in. The first two columns from a Qualtrics csv have to be deleted as they do not really matter.
+
+```{r data read in,  eval=FALSE, echo=TRUE}
+
+diss_text <- read.csv("diss_text.csv", header = TRUE) # could stringsAsFactors = FALSE to prevent age
+#from becoming a factor variable
+
+# Delete first two rows - useless - could also have used "skip"-argument to read.csv to skip first two lines
+
+diss_text <- diss_text[-c(1:2),]
+
+diss_text <- diss_text %>% filter(!Q6 == "Nein")
+```
+
+Next, the variables of interest are selected and renamed for further processing.
+
+```{r var selection, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_text %>% select(Finished, Q5_1:Q9_5, Q25, Q26, Q27, Q28, Q30, Q11, 
+                                 Q12, Q14, Q15, Q16, Q34, Q19, Q33, Q29, Q32, Q35) %>% 
+        rename(years_twitter = Q26, check_twitter = Q27,
+               function_hash = Q30, gender = Q11,
+               same_city = Q15, relationship = Q34,
+               citizenship = Q19, native_lang = Q33,
+               edu = Q29, edu2 = Q32, employ = Q35,
+               item1 = Q5_1, item2 = Q5_2,
+               item3 = Q5_3, item4 = Q5_4,
+               item5 = Q5_5, item6 = Q9_1,
+               item7 = Q9_2, item8 = Q9_3,
+               item9 = Q9_4, item10 = Q9_5,
+               screenName = Q25, time_twitter_min = Q28,
+               age = Q12, zip = Q14, alt_zip = Q16)
+```
+
+## Data processing and cleaning
+
+1. I extracted participants who completed the survey:
+
+```{r part finish, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_sub %>% filter(Finished == "True")
+
+diss_sub <- diss_sub %>% droplevels() # drop factors with 0 entries
+
+str(diss_sub)
+```
+
+2. I cleaned up screenNames for uniformity:
+
+```{r clean screenName, eval=FALSE, echo=TRUE}
+
+diss_sub$screenName <- gsub('@', '', diss_sub$screenName) # some parts included the @-sign
+
+diss_sub$screenName <- gsub("^[[:space:]]*","", diss_sub$screenName) ## Remove leading whitespaces
+
+diss_sub$screenName <-  gsub("[[:space:]]*$","", diss_sub$screenName) ## Remove trailing whitespaces
+
+diss_sub$screenName <- tolower(diss_sub$screenName)
+```
+
+3. The data were then combined and further cleaned with a list of hand-checked Twitter accounts:
+
+```{r good accounts, eval=FALSE, echo=TRUE}
+
+good_tweets <- read.csv("screen_name_validity.csv", header = TRUE)
+
+head(good_tweets)
+str(good_tweets)
+
+table(good_tweets$valid.0...no..1...yes.) # = 75 valid accounts, 161 total out of 202 submitted
+
+diss_sub <- diss_sub %>% mutate(screenName = fct_recode(screenName, "larsihasi_" = "larsi",
+                                                        "darling110" = "ilonadarling110"))
+
+good_tweets$screenName <- tolower(good_tweets$screenName)
+
+diss_sub <- left_join(diss_sub, good_tweets, by = "screenName")
+
+# select verified accounts
+
+diss_sub <- diss_sub %>% na.omit %>% filter(valid.0...no..1...yes. == 1)
+
+# Delete unnecessary columns
+
+diss_sub$changes <- NULL
+diss_sub$Finished <- NULL
+diss_sub$valid.0...no..1...yes. <- NULL
+```
+
+After clean-up, 75 verfied accounts remained out of 191 total submitted.
+
+### Variable recoding
+
+1. I first recoded the variables for the Big-Five personality scores. Here, it is important to note that they have polarity (+/-), which means that the negatively poled items have to be coded in reverse order, according to Rammstedt, 2007 and [Link](http://zis.gesis.org/skala/Rammstedt-Kemper-Klein-Beierlein-Kovaleva-Big-Five-Inventory-(BFI-10)).
+
+```{r personality recoding, eval=FALSE, echo=TRUE}
+
+# Positive Items
+
+diss_sub <- diss_sub %>% mutate(item1 = fct_recode(item1, "1" = "triff überhaupt nicht zu",
+                                                   "2" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "4" = "trifft eher zu",
+                                                   "5" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item2 = fct_recode(item2, "1" = "triff überhaupt nicht zu",
+                                                   "2" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "4" = "trifft eher zu",
+                                                   "5" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item3 = fct_recode(item3, "1" = "triff überhaupt nicht zu",
+                                                   "2" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "4" = "trifft eher zu",
+                                                   "5" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item4 = fct_recode(item4, "1" = "triff überhaupt nicht zu",
+                                                   "2" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "4" = "trifft eher zu",
+                                                   "5" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item5 = fct_recode(item5, "1" = "triff überhaupt nicht zu",
+                                                   "2" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "4" = "trifft eher zu",
+                                                   "5" = "trifft voll und ganz zu"))
+
+# Negative items are recoded in reverse order
+
+diss_sub <- diss_sub %>% mutate(item6 = fct_recode(item6, "5" = "triff überhaupt nicht zu",
+                                                   "4" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "2" = "trifft eher zu",
+                                                   "1" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item7 = fct_recode(item7, "5" = "triff überhaupt nicht zu",
+                                                   "4" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "2" = "trifft eher zu",
+                                                   "1" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item8 = fct_recode(item8, "5" = "triff überhaupt nicht zu",
+                                                   "4" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "2" = "trifft eher zu",
+                                                   "1" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item9 = fct_recode(item9, "5" = "triff überhaupt nicht zu",
+                                                   "4" = "trifft eher nicht zu",
+                                                   "3" = "teils/teils",
+                                                   "2" = "trifft eher zu",
+                                                   "1" = "trifft voll und ganz zu"))
+
+diss_sub <- diss_sub %>% mutate(item10 = fct_recode(item10, "5" = "triff überhaupt nicht zu",
+                                                    "4" = "trifft eher nicht zu",
+                                                    "3" = "teils/teils",
+                                                    "2" = "trifft eher zu",
+                                                    "1" = "trifft voll und ganz zu"))
+```
+
+2. Then, I recoded other variables and changed the personality factors to numeric via characters:
+
+```{r further recoding, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_sub %>% mutate(item1 = as.character(item1),item2 = as.character(item2),
+                                item3 = as.character(item3), item4 = as.character(item4),
+                                item5 = as.character(item5), item6 = as.character(item6),
+                                item7 = as.character(item7), item8 = as.character(item8),
+                                item9 = as.character(item9), item10 = as.character(item10),
+                                time_twitter_min = as.numeric(time_twitter_min),
+                                age = as.character(age), zip = as.character(zip),
+                                alt_zip = as.character(alt_zip)) %>% 
+        mutate(age = as.numeric(age),
+               item1 = as.numeric(item1),item2 = as.numeric(item2),
+               item3 = as.numeric(item3), item4 = as.numeric(item4),
+               item5 = as.numeric(item5), item6 = as.numeric(item6),
+               item7 = as.numeric(item7), item8 = as.numeric(item8),
+               item9 = as.numeric(item9), item10 = as.numeric(item10))
+
+```
+
+Since I did not set stringsAsFactors = FALSE when importing the data, the age and item variable was converted to a factor. The values were mapped to integers and when converting to numeric, R converts the integer and not the value, which is why we have to convert to character first.
+
+3. I then calculated the personality scores
+
+```{r personality scores, eval=FALSE, echo=TRUE}
+
+# http://zis.gesis.org/skala/Rammstedt-Kemper-Klein-Beierlein-Kovaleva-Big-Five-Inventory-(BFI-10)
+
+# The items were coded according to Rammstedt, 2007 (see also link above)
+
+# Items 1(+) and 10(-) = agreeableness
+# Items 2(+) and 6(-) = extraversion
+# Items 3(+) and 7(-) = conscientiousness
+# Items 4(+) and 8(-) = neuroticism
+# Items 5(+) and 9(-) = openness
+
+diss_sub <- diss_sub %>% mutate(a = (item1 + item10)/2,
+                                e = (item2 + item6)/2,
+                                c = (item3 + item7)/2,
+                                n = (item4 + item8)/2,
+                                o = (item5 + item9)/2)
+```
+
+4. Then, I recoded the German factors to English factors.
+
+```{r german > english, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_sub %>% mutate(years_twitter = fct_recode(years_twitter, "1-2 years" = "1-2 Jahre",
+                                                "2-3 years" = "2 -3 Jahre",
+                                                "More than 3 years" = "Mehr als 3 Jahre",
+                                                "Less than a year" = "Weniger als ein Jahr"),
+                   check_twitter = fct_recode(check_twitter, "Once per day" = "Einmal am Tag",
+                                              "Several times per day" = "Mehrmals taeglich",
+                                              "Very frequently" = "Sehr oft am Tag",
+                                              "Very frequently" = "Staendig",
+                                              "Less than once per day" = "Weniger als einmal pro Tag"),
+                   function_hash = fct_recode(function_hash, "tag" = "Tag (um Tweets suchbar zu machen und zu organisieren)",
+                                              "comment" = "Kommentar (auch als ganzer Satz)",
+                                              "both" = "Beides"),
+                   gender = fct_recode(gender, "male" = "Männlich", "female" = "Weiblich"),
+                   same_city = fct_recode(same_city, "yes" = "Ja", "no" = "Nein"),
+                   relationship = fct_recode(relationship, "Married" = "Verheiratet",
+                                             "Divorced" = "Geschieden",
+                                             "In a relationship" = "In einer Beziehung",
+                                             "Single" = "Single", "Widowed" = "Verwitwet"),
+                   citizenship = fct_recode(citizenship, "German" = "Deutsch",
+                                            "Not German" = "Nicht deutsch"),
+                   native_lang = fct_recode(native_lang, "German" = "Deutsch",
+                                            "Croatian" = "Kroatisch", "Spanish" = "Spanisch",
+                                            "Dutch" = "Niederlaendisch", "Russian" = "Russisch",
+                                            "Other" = "Andere"),
+                   edu = fct_recode(edu, "High school (Abitur)" = "Allgemeine Hochschulreife (Abitur)",
+                                    "High school (FOS/BOS)" = "FOS/BOS",
+                                    "Lowest tier (Hauptschule)" = "Hauptschulabschluss",
+                                    "Mid tier - secondary (Realschule)" = "Realschulabschluss"),
+                   edu2 = fct_recode(edu2, "Apprenticeship (vocational training)" = "Abgeschlossene Lehre/Berufsschule",
+                                     "Univeristy of applied sciences" = "Fachhochschulabschluß",
+                                     "University" = "Hochschulabschluß",
+                                     "No degree" = "Kein Abschluss"),
+                   employ = fct_recode(employ, "Unemployed" = "Arbeitslos, Kurzarbeit",
+                                       "Part time work (~20 hrs/week)" = "Erwerbstätig, Teilzeit ~20 Std./Woche",
+                                       "Full time work (~40 hrs/week)" = "Erwerbstätig, Vollzeit ~40 Std./Woche",
+                                       "Student" = "Schüler(in)",
+                                       "Student" = "Student(in)",
+                                       "Retired" = "Rentner(in)/Pensionär(in)"))
+```
+
+### Further participant selection
+
+1. Getting rid of participants who are too young or too old
+
+```{r part age, eval=FALSE, echo=TRUE}
+
+range(diss_sub$age)
+
+diss_sub <- diss_sub %>% filter(age >= 18 & age <= 45) # defines age bracket
+
+```
+
+2. Filter out non-Germans
+
+```{r non germans, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_sub %>% filter(citizenship == "German")
+
+```
+
+### Clean up
+
+1. Get rid of personality items and rearrange dataframe
+
+```{r rid items, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_sub %>% select(-(item1:item10))
+
+diss_sub <- diss_sub %>% select(e, a, c, n, o, everything()) # brings items to front
+
+```
+
+2. Create participant ids based on screenNames and arrange data frame
+
+```{r part_id, eval=FALSE, echo=TRUE}
+
+diss_sub <- diss_sub %>% mutate(part_id = as.numeric(interaction(screenName, drop = TRUE)))
+
+diss_sub <- diss_sub %>% arrange(part_id) # order by part_id
+
+diss_sub <- diss_sub %>% select(part_id, screenName, everything()) # bring part_id and screenName to front
+
+```
+
+3. Finally save data frame
+
+```{r save data frame, eval=FALSE, echo=TRUE}
+
+saveRDS(diss_sub, file = "diss_sub.rds")
+
+```
+
+## Twitter data collection
+
+1. Working with two registered apps in tandem is a nifty way to keep collecting data circumventing the    API rate limits
+
+```{r twitter data collection, eval=FALSE, echo=TRUE}
+
+library(twitteR)
+
+#Twitter API credentials
+
+load(file = "api_credentials.RData") # input your own credentials here
+
+# set up oauth:
+
+setup_twitter_oauth(consumer_key = consumer_key, consumer_secret = consumer_secret,
+                    access_token = access_key, access_secret = access_secret)
+
+# insert actual user names here
+
+tweets_part1 <- userTimeline('username1', n = 3200, includeRts = FALSE, excludeReplies = FALSE)
+
+tweets_part2 <- userTimeline('username2', n = 3200, includeRts = FALSE, excludeReplies = FALSE)
+
+# etc. ...
+
+
+
+twList <- c(tweets_part1, tweets_part2, ...)
+
+tweet_data <- twListToDF(twList = twList) # this creates a dataframe with all the users' tweets
+
+```
+
+2. Select variables to be used
+
+```{r twitter vars, eval=FALSE, echo=TRUE}
+
+library(twitteR)
+
+tweet_data <- tweet_data %>% select(screenName, text, created, statusSource)
+
+saveRDS(tweet_data, file = "tweet_data.rds")
+
+```
+
+## Twitter data processing
+
+1. First, I got rid of all English tweets (or other languages for that matter)
+
+```{r noEnglish, eval=FALSE, echo=TRUE}
+
+devtools::install_version("cldr",version="1.1.0")
+
+library(cldr)
+
+detect1 <- detectLanguage(tweet_data$text, isPlainText = TRUE, 
+                          pickSummaryLanguage = TRUE, 
+                          removeWeakMatches = FALSE)
+
+lg <- detect1 %>% select(candidateLanguage1)
+colnames(lg) <- "lg"
+
+# vectorize data frame from "lg" so tweet data does not end ub with a nested data frame
+
+lg_vector <- lg[ , "lg"]
+
+tweet_data$lg <- lg_vector # add vector as column to tweet data
+
+tweet_data$lg <- factor(tweet_data$lg, levels = c("GERMAN", "ENGLISH"), labels = c("de", "en"))
+
+# filter out German tweets
+
+tweet_data_ger <- tweet_data %>% filter(lg == "de") # this reduced the overall number of 29648 tweets to 22004
+
+tweet_data_ger$screenName <- tolower(tweet_data_ger$screenName) # as in the diss_sub data frame
+
+```
+
+Filtering out German tweets reduced the original number of 29648 tweets to 22004 tweets. This also resulted in the loss of 5 more participants bringing the number down to 70. Probably because of a small number of tweets overall, all of which were in English.
+
+
+## Bringing together the Qualtrics and Twitter data
+
+Language filtering resulted in the loss of another 5 users bringing the total number of participants down to 70. At this point, this number still included accounts with very low numbers of tweets.
+
+LIWC needs roughly 50 words to work properly. I decided to calculate the overall number of unique words per participant to see which ones would fall below 50. Whichever participant did, was excluded from the data set.
+
+```{r part word cutoff, eval=FALSE, echo=TRUE}
+
+## Determine my own cutoff part with less than 50 words...use clean tweets for that...
+
+source("text_processing.R")
+
+tweet_data_ger$clean <- lapply(tweet_data_ger$text, text_processing)
+
+tweet_data_ger$clean <- unlist(tweet_data_ger$clean)
+
+# with purrr
+
+tweet_data_ger$clean <- map(tweet_data_ger$text, text_processing) %>% unlist()
+
+### Find unique words per tweet
+
+word_list <- strsplit(tweet_data_ger$clean, " ")
+
+uniq_words_per_tweet = sapply(word_list, function(x) length(unique(x)))
+
+tweet_data_ger <- cbind(tweet_data_ger, uniq_words_per_tweet)
+
+uniq_sum_words <- tweet_data_ger %>% group_by(screenName) %>% summarise(uniq_words_overall = sum(uniq_words_per_tweet))
+
+tweet_data_ger <- left_join(tweet_data_ger, uniq_sum_words, by = "screenName")
+
+## Filter out participants with fewer than 50 unique words overall
+
+tweet_data_ger <- tweet_data_ger %>% filter(uniq_words_overall >= 50)
+
+new_sum_tweet_ger <- as.data.frame(tweet_data_ger %>% group_by(screenName) %>% summarize(tweet_num = n()))
+```
+
+```{r clean with punct, eval=FALSE, echo=TRUE}
+
+## Combine twitter data (counts) with diss_sub (Qualtrics data)
+
+source("text_processing.R")
+
+tweet_data_ger$clean_w_punct <- lapply(tweet_data_ger$text, text_processing_with_punct)
+
+tweet_data_ger$clean_w_punct <- unlist(tweet_data_ger$clean_w_punct)
+
+# with purrr
+
+tweet_data_ger$clean_w_punct <- map(tweet_data_ger$text, text_processing_with_punct) %>% unlist()
+
+
+# reorder by column name
+
+tweet_data_ger <- tweet_data_ger[c("part_id", "screenName", "text", "created", "statusSource",
+                                "statusSource2",
+                                "lg", "tweet_num", "clean", "uniq_words_per_tweet",
+                                "uniq_words_overall",
+                                "clean_w_punct", "tt_50", "emoji", "sent_score")]
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+```
+
+
+This resulted in the exclusion of 7 more participants who had fewer than 50 unique words bringing the total number of participants down to 63 to a total of 21989 tweets. Here, the tweets were already cleanded for further processing in LIWC and to get lex div measures.
+
+I then joined the information from the German tweets with the Qualtrics data to create diss_data
+
+```{r diss data, eval=FALSE, echo=TRUE}
+
+## Combine twitter data (counts) with diss_sub (Qualtrics data)
+
+diss_data <- semi_join(diss_sub, new_sum_tweet_ger, by = "screenName", copy = TRUE)# filtering join
+#copy = TRUE needed bc data frames from different sources.
+
+diss_data <- left_join(diss_data, new_sum_tweet_ger, by = "screenName") # adds num of tweets
+
+```
+
+
+### Create part_ids
+
+Finally, I created part_ids for both data frames:
+
+```{r part_id tweets, eval=FALSE, echo=TRUE}
+
+tweet_data_ger <- tweet_data_ger %>% mutate(part_id = as.numeric(interaction(screenName, drop = TRUE))) # also works
+
+tweet_data_ger <- tweet_data_ger %>% select(part_id, everything())
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+diss_data <- diss_data %>% mutate(part_id = as.numeric(interaction(screenName, drop = TRUE)))
+
+diss_data <- diss_data %>% select(part_id, everything())
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+Part_ids are created last because, from now on, participants are referred to with their IDs and all summary statistics are matched by part_ids...
+

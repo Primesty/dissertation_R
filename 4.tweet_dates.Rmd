@@ -1,0 +1,144 @@
+---
+title: "tweet_dates"
+author: "M_Raess"
+date: "June 6, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+### Getting into tweets
+
+```{r tweets dates, echo=TRUE, eval=FALSE}
+
+library(lubridate)
+
+diss_data <- readRDS("diss_data.rds")
+
+tweet_data_ger <- readRDS("tweet_data_ger.rds")
+
+tweet_data_ger$part_id <- as.factor(tweet_data_ger$part_id)
+
+tweet_ger_date <- tweet_data_ger %>% select(part_id, created, statusSource, statusSource2)
+
+tweet_ger_date <- left_join(tweet_ger_date, diss_data[,c("part_id", "gender", "age", "age_group", "employ")], by = "part_id")
+
+saveRDS(tweet_ger_date, file = "tweet_ger_date.rds")
+
+```
+
+```{r tweets datesII, echo=TRUE, eval=FALSE}
+
+source("theme_matt.R")
+
+tweet_week <- tweet_ger_date %>% 
+        mutate(wday = wday(created, label = TRUE)) %>%
+        mutate(employ = fct_recode(employ, "Part t. (~20 hrs/week)" = "Part time work (~20 hrs/week)",
+                                   "Full t. (~40 hrs/week)" = "Full time work (~40 hrs/week)")) %>% 
+        ggplot(aes(x = wday, fill = gender)) + 
+        geom_bar(position = 'dodge') +
+        scale_fill_manual(values = c(female = "rosybrown1", male = "steelblue"), name = "Gender", labels = c("Male", "Female")) +
+        scale_y_continuous(labels = scales::comma) +
+        theme_matt() +
+        theme(strip.text = element_text(face = "plain"), 
+              axis.text.x = element_text(angle = 45, vjust = .85), axis.title.x = element_blank()) +
+        facet_grid(age_group~employ) +
+        ylab("Number of tweets")
+
+ggsave(tweet_week, filename = "tweet_week.png", device = "png", width = 18, height = 18*0.618, units = "cm")
+
+
+tweet_ger_date %>% 
+        mutate(year = year(created)) %>% 
+        ggplot(aes(x = as.factor(year), fill = gender)) + 
+        geom_bar(position = 'dodge') +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender") +
+        theme_matt()
+
+tweet_ger_date %>% 
+        mutate(month = month(created, label = TRUE)) %>% 
+        ggplot(aes(x = month, fill = gender)) + 
+        geom_bar(position = 'dodge') +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), name = "Gender") +
+        theme_matt()
+
+
+## count data
+
+tweet_ger_date %>% 
+        mutate(month = month(created, label = TRUE)) %>% 
+        group_by(part_id, age, gender, month) %>% 
+        dplyr::summarise(n = n()) %>% 
+        ggplot(aes(x = age, y = n, shape = gender, col = month)) + 
+        geom_point() +
+        theme_matt()
+
+
+
+age_groups_months <- tweet_ger_date %>% 
+        mutate(month = month(created, label = TRUE)) %>%
+        mutate(employ = fct_recode(employ, "Part t. (~20 hrs/week)" = "Part time work (~20 hrs/week)",
+                                   "Full t. (~40 hrs/week)" = "Full time work (~40 hrs/week)")) %>% 
+        ggplot(aes(x = month, fill = gender)) + 
+        geom_bar(position = "dodge") +
+        scale_fill_manual(values = c(male = "steelblue", female = "rosybrown1"), 
+                          name = "Gender", labels = c("Male", "Female")) +
+        scale_y_continuous(labels = scales::comma) +
+        facet_grid(age_group~employ) +
+        theme_matt() +
+        theme(strip.text = element_text(face = "plain"), axis.text.x = element_text(angle = 45)) +
+        ylab("Number of tweets") +
+        xlab("Months") +
+        theme(axis.title.x = element_blank()) 
+
+ggsave(age_groups_months, filename = "age_group_months.png", device = "png", width = 18, height = 18*0.618, units = "cm")
+
+## When do they tweet most? Time of day??
+
+library(forcats)
+
+tweet_daytime <- tweet_ger_date %>% 
+        mutate(employ = fct_recode(employ, "Part t. (~20 hrs/week)" = "Part time work (~20 hrs/week)",
+                                   "Full t. (~40 hrs/week)" = "Full time work (~40 hrs/week)")) %>% 
+        mutate(hour = hour(created)) %>% 
+        ggplot(aes(x = hour, fill = gender)) + 
+        geom_bar(position = 'dodge') +
+        scale_fill_manual(values = c(female = "rosybrown1", male = "steelblue"), 
+                          name = "Gender", labels = c("Male", "Female")) +
+        scale_x_continuous(breaks = c(0, 8, 12, 17, 20), labels = c("0" = "12am", 
+                                    "8" = "8am", "12" = "12pm", "17" = "5pm", "20" = "8pm")) +
+        scale_y_continuous(labels = scales::comma) +
+        theme_matt() + 
+        theme(strip.text = element_text(face = "plain"), 
+              axis.text.x = element_text(angle = 45, vjust = .85)) +
+        ylab("Number of tweets") +
+        xlab("Time") +
+        facet_grid(age_group~employ)
+
+ggsave(tweet_daytime, filename = "tweet_daytime.png", device = "png", width = 18, height = 18*0.618, units = "cm")
+
+tweets_source <- tweet_ger_date %>% group_by(gender, age_group, statusSource) %>% summarise(n = n()) %>% top_n(5) %>% 
+        ggplot(aes(statusSource, n, fill = gender)) + 
+        geom_bar(position = "dodge", stat = "identity", width = .6) +
+        geom_text(aes(x = statusSource, y = n,label= n),vjust = 0.1, size = 3) +
+        scale_fill_manual(values = c(female = "tomato", male = "steelblue"), 
+                          name = "Gender", labels = c("Male", "Female")) +
+        facet_grid(age_group~gender) +
+        scale_y_continuous(limits = c(0,2800)) +
+        theme_matt() +
+        theme(axis.text.x = element_text(angle = 75, vjust = .6),
+              strip.text = element_text(face = "plain")) +
+        ylab("Number of tweets") +
+        xlab("Source")
+
+ggsave(tweets_source, filename = "tweets_source.png", device = "png", width = 18, height = 18*0.618, units = "cm")
+```
+
+![Tweeting week](tweet_week.png)
+
+
+
+![Age groups](age_group.png)

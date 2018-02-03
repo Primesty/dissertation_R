@@ -1,0 +1,688 @@
+---
+title: "hypothesis_testing"
+author: "M_Raess"
+date: "6/26/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Hypothesis testing
+
+```{r personality categories}
+
+library(mgcv)
+
+source("ggplot.gam.R")
+
+gam1 <- gam(positive_emotion ~ s(age, by = gender) + gender*e + e*age, data = liwc_use)
+
+summary(gam1)
+
+ggplot.gam(gam1, res = TRUE) + theme(strip.text = element_text(face = "plain"))
+
+
+liwc_use <- left_join(liwc_use, diss_data[,c("part_id", "hash_dens", "emoji_dens")], by = "part_id")
+
+liwc_use <- liwc_use %>% mutate(E = e, Age = age, Gender = gender, C = c, Emoji_dens = emoji_dens,
+                                A = a, N = n, O = o)
+
+liwc_use$part_id <- as.factor(liwc_use$part_id)
+
+liwc_results$part_id <- as.factor(liwc_results$part_id)
+
+liwc_use <- left_join(liwc_use, liwc_results[,c("part_id", "positive_feeling")], by = "part_id")
+
+
+gam2 <- gam(positive_emotion ~ E*Age + s(Age, by = Gender, bs = "fs") + C + s(Emoji_dens, by = Gender, bs = "fs"), data = liwc_use)
+
+summary(gam2)
+
+
+# gam can explain over 37% of variance with smooth terms - model comparison shows that insignificant predictors still contribute to explanatory power...
+
+summary(lm(positive_emotion ~ a + c, data = liwc_use))
+
+lm1 <- lm(positive_emotion ~ age*e + age*gender + c + emoji_dens*gender, data = liwc_use) # SLIM can only explain 12% of variance in data with same covariates
+
+anova(lm1, gam2, test = "Chisq") # Anova shows that gam is better fit1
+
+gam.check(gam2)
+
+concurvity(gam2)
+
+gam2_plot <- ggplot.gam(gam2, res = TRUE) + theme(strip.text = element_text(face = "plain"))
+
+ggsave(gam2_plot, filename = "gam_pos_emo.png", width = 20, height = 20*0.618, units = "cm", device = "png")
+
+
+
+ggplot(liwc_use) + geom_line(aes(positive_emotion, age)) + geom_smooth(aes(positive_emotion, age))
+
+pos <- liwc_use
+
+pos$fit <- gam2$fitted.values
+
+pos$resid <- gam2$residuals
+
+pos <- pos %>% gather(`positive_emotion`, `fit`, key = "type", value = "measure")
+
+pos <- pos %>% mutate(type = as.factor(type)) %>% mutate(type = fct_recode(type, "real" = "positive_emotion"))
+
+
+ggplot(pos) + geom_line(aes(age, measure, color = type)) + 
+        ggtitle(label = "Goodness of fit") + 
+        theme_matt() + 
+        scale_color_manual(values = c(fit = "red", real = "steelblue"), name = "Type") + 
+        theme(legend.title = element_text(face = "bold"))
+
+# Same model with centered age variable (at 20)
+
+liwc_use <- liwc_use %>% mutate(Age_z = scale(age, center = 20, scale = FALSE),
+                                E_z = scale(e, scale = TRUE, center = TRUE))
+
+liwc_use$Age_z <- as.numeric(liwc_use$Age_z)
+
+liwc_use$E_z <- as.numeric(liwc_use$E_z)
+
+gam2_z <- gam(positive_emotion ~ E_z*Age_z + s(Age_z, by = Gender, bs = "fs") + C + s(Emoji_dens, by = Gender, bs = "fs"), data = liwc_use)
+
+summary(gam2_z)
+
+gam2_plot_z <- ggplot.gam(gam2_z, res = TRUE) + theme(strip.text = element_text(face = "plain"))
+
+ggsave(gam2_plot_z, filename = "gam_pos_emo_z.png", width = 20, height = 20*0.618, units = "cm", device = "png")
+
+
+# Test pos feelings 
+
+gam3_posfeel <- gam(positive_feeling ~ E + A + C + s(Age, by = Gender, bs = "fs") + s(Emoji_dens, by = Gender, bs = "fs"), data = liwc_use)
+
+
+summary(gam3_posfeel)
+
+concurvity(gam3_posfeel)
+
+gam.check(gam3_posfeel)
+
+qq.gam(gam3_posfeel)
+
+
+gam3_posfeel_plot <- ggplot.gam(gam3_posfeel, res = TRUE) + 
+        theme(strip.text = element_text(face = "plain")) + 
+        labs(caption = "Dashed line = 95% Confidence interval, Points = Residuals, \nE, A, C = BigFive score 1-5, Age = 20-45 Years,\nGender1 = Male, Gender2 = Female, Emoji_dens = 0-100%") +
+        theme(plot.caption = element_text(hjust = 0.95, size = 10))
+
+ggsave(gam3_posfeel_plot, filename = "gam3_posfeel_plot.png", width = 24, height = 24*0.618, units = "cm", device = "png")
+
+### Sent score ~ E + N
+
+sent_data <- left_join(tweet_data_ger[,c("part_id", "sent_score", "statusSource", "created")], diss_data[,c("part_id", "age", "age_group" ,"gender", "e", "a", "c", "n", "o", "emoji_dens", "relationship", "edu", "edu2")], by = "part_id")
+
+sent_data <- sent_data %>% na.omit() # 1,789 observations
+
+sent_data$part_id <- as.factor(sent_data$part_id)
+
+## Running a mixed model with (1|part_id) controlling for by-participant variability
+
+## Most important assumption independence: non-independencies are resolved with a mixed model
+
+# random slope model
+
+library(lme4)
+
+lmer0n <- lmer(sent_score ~ n + age + gender + emoji_dens + (1 + e + age|part_id), data = sent_data, REML = FALSE)
+
+lmer0e <- lmer(sent_score ~ e + age + gender + emoji_dens + (1 + n + age|part_id), data = sent_data, REML = FALSE)
+
+lmerE <- lmer(sent_score ~ e + n + age + gender + emoji_dens + (1 + e + age|part_id), data = sent_data, REML = FALSE)
+
+lmerN <- lmer(sent_score ~ n + e + age +gender + emoji_dens + (1 + n + age|part_id), data = sent_data,
+              REML = FALSE)
+
+# Run likelihood ratio tests to see if full model is better than null model
+
+summary(lmerE)
+
+car::Anova(lmerE)
+
+plot(lmerE)
+
+qqnorm(resid(lmerE))
+
+anova(lmer0n, lmerE)
+
+plot(lmerN)
+
+qqnorm(resid(lmerN))
+
+summary(lmerN)
+
+car::Anova(lmerN)
+
+anova(lmer0e, lmerN)
+
+## Gender and sent score
+
+lmer0g <- lmer(sent_score ~ age + relationship + edu2 + (1|part_id), data = sent_data, REML = FALSE)
+
+lmerG <- lmer(sent_score ~ age + gender + relationship + edu2 + (1|part_id), data = sent_data, REML = FALSE)
+
+summary(lmerG)
+
+anova(lmer0g, lmerG)
+
+car::Anova(lmerG)
+
+## Age and sent score
+
+lmer0a <- lmer(sent_score ~ gender + relationship + edu2 + (1|part_id), data = sent_data, REML = FALSE)
+
+lmerA <- lmer(sent_score ~ age + gender + relationship + edu2 + (1|part_id), data = sent_data, REML = FALSE)
+
+summary(lmerA)
+
+anova(lmer0a, lmerA)
+
+car::Anova(lmerA)
+
+```
+
+```{r gender effects hash}
+
+# Gender and hashtag
+
+hist(diss_data$hash_dens)
+
+diss_data <- diss_data %>% droplevels()
+
+diss_data <- diss_data %>% mutate(E = e, Age = age, Gender = gender, C = c, Emoji_dens = emoji_dens,
+                                A = a, Relationship = relationship, 
+                                Time_twitter = time_twitter_min, Hash_dens = hash_dens, Edu2 = edu2,
+                                Emoji_dens = emoji_dens)
+
+hash_dens_lm <- lm(Hash_dens ~ Age + Gender + Relationship + Edu2, data = diss_data)
+
+summary(hash_dens_lm)
+
+plot(hash_dens_lm)
+
+
+
+#gam_hash <- gam(Hash_dens ~ E + A + C + Relationship + Edu2 + Age + Gender + s(Time_twitter, by = Gender) +
+                        s(Emoji_dens, by = Gender), 
+                data = diss_data)
+
+#summary(gam_hash)
+
+#gam.check(gam_hash)
+
+#qq.gam(gam_hash)
+
+#plot.gam(gam_hash)
+
+#gam_hash_plot <- ggplot.gam(gam_hash, res = TRUE) + theme(strip.text = element_text(face = "plain"))
+
+#ggsave(gam_hash_plot, filename = "gam_hash_plot.png", width = 30, height = 30*0.618, units = "cm", device = "png")
+
+## Linear model comes back non-significant, p = .22 F(3,58) = 1.52
+
+## Hashtag dens of tag c = level 0 (reflevel); t = level 1 controlling for individual intercepts (1part_id)
+
+
+## Generalized linear mixed effects model for hashtag types - gender
+
+hash_data <- hashtags_coded %>% dplyr::select(-tweet_id) # read in hashtags_coded.rds
+
+hash_logit_0g <- glmer(hash_type ~ age + lang + pos + nchar + (1|part_id), 
+                      data = hash_data, family = binomial(link = logit))
+
+hash_logit_g <- glmer(hash_type ~ gender + age + lang + pos + nchar + (1|part_id), 
+                      data = hash_data, family = binomial(link = logit))
+
+summary(hash_logit_g)
+
+print(hash_logit_g)
+
+exp(fixef(hash_logit_g))
+
+#hash_data$coded <- ifelse(hash_data$hash_type == "c", 0, 1) 
+
+#ggplot(hash_data, aes(age, coded)) + geom_point() +
+        #stat_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE)
+
+## ++ CI
+
+se <- sqrt(diag(vcov(hash_logit_g)))
+
+est_g <- cbind(beta = fixef(hash_logit_g), lower = fixef(hash_logit_g) - 1.96*se, upper = fixef(hash_logit_g) + 1.96*se)
+
+exp(est_g)
+
+anova(hash_logit_0g, hash_logit_g) # no significantly better fit
+
+library(MuMIn)
+
+r.squaredGLMM(hash_logit_g) # calculates marginal and conditional R2
+
+car::Anova(hash_logit_g)
+
+plot(hash_logit_g)
+
+qqnorm(resid(hash_logit_g))
+
+## Generalized linear mixed effects model for hashtag types - lang
+
+hash_logit_0l <- glmer(hash_type ~ gender + age + pos + nchar + (1|part_id), 
+                      data = hash_data, family = binomial(link = logit))
+
+hash_logit_l <- glmer(hash_type ~ gender + age + lang + pos + nchar + (1|part_id), 
+                      data = hash_data, family = binomial(link = logit))
+
+summary(hash_logit_l)
+
+anova(hash_logit_0l, hash_logit_l)
+
+## Zero-inflated model for number of hashtags...???
+
+hash_data_n <- hash_data %>% group_by(part_id, gender, age, lang, hash_type, pos) %>% summarise(n = n())
+
+hash_data_n$part_id <- as.factor(hash_data_n$part_id)
+hash_data_n$lang <- as.factor(hash_data_n$lang)
+
+glmer_nb <- glmer.nb(n ~ age + gender + hash_type + lang + pos + (1|part_id), family = "nbinom", data = hash_data_n)
+
+sjstats::r2(glmer_nb) # Tjur's D = .2996
+
+library(glmmADMB)
+
+zero_nb <- glmmadmb(n ~ age + gender + hash_type + lang + pos + (1|part_id), data = hash_data_n, family = "nbinom", zeroInflation = TRUE)
+
+summary(zero_nb)
+
+nb <- glmmadmb(n ~ age + gender + hash_type + lang + pos + (1|part_id), data = hash_data_n, family = "nbinom", zeroInflation = FALSE)
+
+summary(nb)
+
+anova(zero_nb, nb) # models are significantly different
+
+library(lmtest)
+
+lrtest(nb, zero_nb)
+
+```
+
+``` {r gender effects emoji}
+
+# Gender and emoji
+
+hist(diss_data$emoji_dens)
+
+emoji_dens_lm <- lm(emoji_dens ~ gender + age + edu2 + relationship, data = diss_data)
+
+summary(emoji_dens_lm)
+
+plot(emoji_dens_lm)
+
+diss_data <- diss_data %>% droplevels()
+
+gam_emoji <- gam(Emoji_dens ~ E + A + C + s(Age, by = Gender) + Gender + Relationship + Edu2 + Time_twitter +
+                        s(Hash_dens, by = Gender), data = diss_data)
+
+
+summary(gam_emoji)
+
+gam.check(gam_emoji)
+
+qq.gam(gam_emoji)
+
+plot.gam(gam_hash)
+
+gam_emoji_plot <- ggplot.gam(gam_emoji, res = TRUE) + 
+        theme(strip.text = element_text(face = "plain")) + 
+        labs(caption = "Dashed line = 95% Confidence interval, Points = Residuals, \nE, A, C = BigFive score 1-5, Age = 20-45 Years, Gender1 = Male, Gender2 = Female, \nRelationship1 = Divorced, Relationship2 = In a relationship, Relationship3 = Single, \nRelationship4 = Married, Edu2_1 = Apprenticeship, Edu2_2 = University of Applied Sciences, \nEdu2_3 = University, Edu2_4 = No degree, Time on Twitter = 5-45 Min, Emoji_dens = 0-100%") +
+        theme(plot.caption = element_text(hjust = 0.95, size = 10))
+
+ggsave(gam_emoji_plot, filename = "gam_emoji_plot.png", width = 30, height = 30*0.618, units = "cm", device = "png")
+
+## Tobit regression with DV as censored continous variable
+
+library(VGAM)
+
+diss_data$emoji_dens_dec <- diss_data$emoji_dens/100
+
+emoji_tobit <- vglm(emoji_dens_dec ~ gender + age + edu2 + relationship, tobit(Upper = 0.9167), data = diss_data)
+
+summary(emoji_tobit)
+
+# Variance accounted for
+
+r <- cor(fitted(emoji_tobit)[,1], diss_data$emoji_dens_dec)
+
+r^2
+
+```
+
+
+```{r lx LIWC stuff}
+
+source("ggplot.gam.R")
+
+source("partial_omegas_anova.R")
+
+## Would log transform make sense in genderal for these since multiplicative data (relative)??
+
+liwc_use <- left_join(liwc_use, diss_data[,c("part_id", "hash_dens", "emoji_dens")], by = "part_id")
+
+liwc_use$part_id <- as.factor(liwc_use$part_id)
+
+liwc_results$part_id <- as.factor(liwc_results$part_id)
+
+liwc_use <- left_join(liwc_use, liwc_results[,c("part_id", "positive_feeling")], by = "part_id")
+
+liwc_use <- left_join(liwc_use, diss_data[,c("part_id", "edu", "edu2", "relationship")], by = "part_id")
+
+liwc_use <- liwc_use %>% mutate(E = e, Age = age, Gender = gender, C = c, Emoji_dens = emoji_dens,
+                                A = a, N = n, O = o, Relationship = relationship, Positive_emotion = positive_emotion, Positive_feeling = positive_feeling)
+
+liwc_use <- liwc_use %>% droplevels()
+
+## Positive emotion
+
+## Fewer predictors - only gender and age - log transform where necessary
+
+library(moments)
+
+skewness(liwc_use$positive_emotion) # positive skew = 2.1059
+
+agostino.test(liwc_use$positive_emotion) # data is skewed
+
+hist(liwc_use$positive_emotion) # right skew but not poisson - not count data
+
+lm_emo <- lm(positive_emotion ~ gender + age, data = liwc_use)
+
+summary(lm_emo)
+
+plot(lm_emo) - ## outliers
+
+hist(log(liwc_use$positive_emotion)) # log-transformation makes it more normal...
+
+summary(lm(log(positive_emotion) ~ gender + age, data = liwc_use)) # age, edf = 1 no gam
+
+
+
+### Or Box-Cox transformation??
+
+# box_emo <- lm(positive_emotion ~ gender + age + relationship + edu2, data = liwc_use)
+
+
+# boxCox(box_emo, family="yjPower", plotit = TRUE) # Lambda = ~ -.33
+
+# Transform with lambda
+
+# lambda <- -0.33
+
+# liwc_use$pos_emo_lambda <- yjPower(liwc_use$positive_emotion, lambda)
+
+# Refit model
+
+#summary(lm(pos_emo_lambda ~ gender + age, data = liwc_use))
+
+# summary(glm(pos_emo_lambda ~ gender + age, data = liwc_use, family=gaussian(link="log")))
+
+
+### Postive feeling
+
+
+
+hist(liwc_use$positive_feeling) #non-normal
+
+skewness(liwc_use$positive_feeling) # positive (right) skew = 1.80075
+
+agostino.test(liwc_use$positive_feeling) # data is skewed
+
+hist(log(liwc_use$positive_feeling)) # log_transformation makes it normal - 
+
+# but introduces -Inf because of 0 values (add constant of 1 prior to transformation)
+
+# Constant a = b-min(y)
+
+a <- 1 - min(liwc_use$positive_feeling)
+
+liwc_use$pos_feel_log <- log(liwc_use$positive_feeling + a)
+
+summary(lm(pos_feel_log ~ gender + age, data = liwc_use))
+
+
+# Negative emotion
+
+hist(liwc_use$negative_emotion) # pretty normal
+
+skewness(liwc_use$negative_emotion) # = 0.0123
+
+agostino.test(liwc_use$negative_emotion) # data is not skewed
+
+
+summary(lm(negative_emotion ~ gender + age, data = liwc_use))
+
+# Anger
+
+hist(liwc_use$anger) #pretty right skewed
+
+skewness(liwc_use$anger) # = 1.346
+
+agostino.test(liwc_use$anger) # highly skewed
+
+a <- 1 - min(liwc_use$anger)
+
+summary(lm(log(anger + a) ~ gender + age, data = liwc_use))
+
+
+
+## Swear
+
+hist(liwc_use$swear)
+
+skewness(liwc_use$swear) # = 1.2135
+
+agostino.test(liwc_use$swear) # data is skewed
+
+hist(log(liwc_use$swear)) # log_transform does not really make it better
+
+a <- 1 - min(liwc_use$swear)
+
+summary(lm(log(swear + a) ~ gender + age, data = liwc_use))
+
+
+
+## Tentative
+
+hist(liwc_use$tentative)
+
+skewness(liwc_use$tentative) # moderate positive skew = 0.2595
+
+agostino.test(liwc_use$tentative) # data not skewed
+
+hist(log(liwc_use$tentative)) # shifts skew to the right!!
+
+
+summary(lm(tentative ~ gender + age, data = liwc_use))
+
+
+
+## social concerns
+
+hist(liwc_use$social)
+
+skewness(liwc_use$social) # substantial positive skew = 1.7677
+
+agostino.test(liwc_use$social) # data is skewed
+
+hist(log(liwc_use$social)) # log transform makes it more normal
+
+a <- 1 - min(liwc_use$social)
+
+summary(lm(log(social + a) ~ gender + age, data = liwc_use))
+
+## family and friends
+
+hist(liwc_use$family) # pretty normal
+
+skewness(liwc_use$family) # slight negative (left) skew = -0.0903
+
+agostino.test(liwc_use$family) # data is not skewed
+
+summary(lm(family ~ gender + age, data = liwc_use))
+
+hist(liwc_use$friends) # very skewed
+
+skewness(liwc_use$friends) # substantial right skew = 3.6071
+
+agostino.test(liwc_use$friends) # data is skewed
+
+hist(log(liwc_use$friends)) # huge tip in the middle
+
+a <- 1 - min(liwc_use$positive_friends)
+
+summary(lm(log(friends + a) ~ gender + age, data = liwc_use))
+
+## occupation
+
+hist(liwc_use$occup)
+
+skewness(liwc_use$occup) # substantial right skew = 2.0187
+
+agostino.test(liwc_use$occup) # data is skewed
+
+hist(log(liwc_use$occup)) # makes it more normal
+
+a <- 1 - min(liwc_use$occup)
+
+summary(lm(log(occup + a) ~ gender + age, data = liwc_use))
+
+## job
+
+hist(liwc_use$job) #relatively normal
+
+skewness(liwc_use$job) # moderate right skew = 1.4537
+
+agostino.test(liwc_use$job) # data is skewed
+
+hist(log(liwc_use$job)) #shifts it to the right
+
+summary(lm(job ~ gender + age, data = liwc_use))
+
+
+## achievement
+
+hist(liwc_use$achieve) # right skew
+
+skewness(liwc_use$achieve) # right skew = 1.4476
+
+agostino.test(liwc_use$achieve) # data is skewed
+
+hist(log(liwc_use$achieve)) # makes it more normal
+
+a <- 1 - min(liwc_use$achieve)
+
+summary(lm(log(achieve + a) ~ gender + age, data = liwc_use))
+
+
+## money
+
+hist(liwc_use$money)
+
+skewness(liwc_use$money) # positive skew = 1.8934
+
+agostino.test(liwc_use$money) # data is skewed
+
+hist(log(liwc_use$money)) # makes it more normal
+
+a <- 1 - min(liwc_use$money)
+
+summary(lm(log(money + a) ~ gender + age, data = liwc_use))
+
+## sports
+
+skewness(liwc_use$sports) # substantial right skew = 2.7678
+
+agostino.test(liwc_use$sports) # data is skewed
+
+hist(log(liwc_use$sports)) # makes it more normal
+
+a <- 1 - min(liwc_use$sports)
+
+summary(lm(log(sports + a) ~ gender + age, data = liwc_use))
+
+
+
+# Kendall–Theil Sen Siegel nonparametric linear regression
+
+library(mblm)
+
+summary(mblm(sports ~ age, data = liwc_use)) # only works with cont' data
+
+## Quantile regression
+
+library(quantreg)
+
+sports_rq <- rq(sports ~ gender + age + relationship + edu2, data = liwc_use, tau = 0.5) # tau = 0.5 median of outcome
+
+sports_0 <- rq(sports ~ age + relationship + edu2, data = liwc_use, tau = .5)
+
+anova(sports_rq, sports_0)
+
+
+## CTTR
+
+hist(diss_data$cttr) # pretty normal
+
+skewness(diss_data$cttr) # pretty normal
+
+summary(lm(cttr ~ gender + age, data = diss_data))
+
+cttr_aov <- aov(cttr ~ gender + age, data = diss_data)
+
+summary(cttr_aov)
+
+partialOmegas(cttr_aov)
+
+## Yules'k
+
+hist(diss_data$yules_k)
+
+skewness(diss_data$yules_k) # substantial postive skew = 5.6818
+
+hist(log(diss_data$yules_k)) # makes it a little more normal
+
+summary(lm(log(yules_k) ~ gender + age, data = diss_data))
+
+yules_aov <- aov(log(yules_k) ~ gender + age, data = diss_data)
+
+summary(yules_aov)
+
+partialOmegas(yules_aov)
+
+# Weil/denn
+
+hist(diss_data$weil_dens)
+
+agostino.test(diss_data$weil_dens) # skewed
+
+hist(log(diss_data$weil_dens)) # makes it more normal
+
+hist(diss_data$denn_dens)
+
+agostino.test(diss_data$denn_dens) # skewed
+
+hist(log(diss_data$denn_dens)) #makes it more normal
+
+t.test(log(diss_data$denn_dens + 1), log(diss_data$weil_dens + 1))
+
+wilcox.test(diss_data$weil_dens, diss_data$denn_dens)
+
+
+```
+

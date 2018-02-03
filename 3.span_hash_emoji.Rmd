@@ -1,0 +1,410 @@
+---
+title: "span_hash_emoji"
+author: "M_Raess"
+date: "5/26/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Calculation of tt_50 (how avid a user is)
+
+```{r span, eval=FALSE, echo=TRUE}
+source("time_to_100.R")
+
+span <- time_to_100_part(tweet_data_ger)
+
+tt_100 <- data.frame(keyName=levels(tweet_data_ger$screenName), value=span, row.names=NULL) # creates data frame with screenNames (key)
+
+names(tt_100) <- c("screenName", "tt_100")
+
+median(tt_100$tt_100, na.rm = TRUE) # 98 days
+
+mean(tt_100$tt_100, na.rm = TRUE) # 205.17 days
+
+```
+
+
+It might actually be a lot better to impute missing values with the mice or the missForrest package...
+
+```{r span repl, eval=FALSE, echo=TRUE}
+
+# match back to tweet_data_ger
+
+tweet_data_ger <- left_join(tweet_data_ger, tt_100, by = "screenName")
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+# match back to diss_data
+
+diss_data <- left_join(diss_data, tt_50, by = "screenName")
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+
+What about time to 50
+
+```{r spanII, eval=FALSE, echo=TRUE}
+source("time_to_100.R")
+
+span2 <- time_to_50_part(tweet_data_ger)
+
+tt_50 <- data.frame(keyName=levels(tweet_data_ger$screenName), value=span2, row.names=NULL) # creates data frame with screenNames (key)
+
+names(tt_50) <- c("screenName", "tt_50")
+
+median(tt_50$tt_50, na.rm = TRUE) # 53 days
+
+mean(tt_50$tt_50, na.rm = TRUE) # 172 days
+
+length(which(is.na(tt_50$tt_50))) # only 16 NAs now or 25%
+
+```
+Now, only 25% of part have an NA for tt_50 > 25% have fewer than 50 tweets
+
+```{r span repl2, eval=FALSE, echo=TRUE}
+
+# match back to tweet_data_ger
+
+tweet_data_ger <- left_join(tweet_data_ger, tt_50, by = "screenName")
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+# match back to diss_data
+
+diss_data <- left_join(diss_data, tt_50, by = "screenName")
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+## Calculate hashtag density per participant
+
+
+```{r hashtag density, eval = FALSE, echo=TRUE}
+
+source("hashtag_density.R")
+
+hash_dens <- hashtag_density(tweet_data_ger) # hashtag density in % based on overall tweets
+
+diss_data <- left_join(diss_data, hash_dens[, c("part_id","hash_num", "hash_dens")], by = c("part_id"))
+
+diss_data$hash_dens[is.na(diss_data$hash_dens)] <- 0
+
+diss_data$hash_num[is.na(diss_data$hash_num)] <- 0
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+
+## Calculate emoji density per participant
+
+```{r emoji density, eval = FALSE, echo=TRUE}
+
+## Change emoji encoding for emoji stuff
+
+tweet_data_ger$emoji <- unlist(lapply(tweet_data_ger$text, function(row) iconv(row, "latin1", "ASCII", "byte")))
+
+source("emoji_density.R")
+
+emoji_dens <- emoji_density(tweet_data_ger)
+
+diss_data <- left_join(diss_data, emoji_dens[, c("part_id","emo_num", "emoji_dens")], by = c("part_id"))
+
+diss_data$emo_num[is.na(diss_data$emo_num)] <- 0
+
+diss_data$emoji_dens[is.na(diss_data$emoji_dens)] <- 0
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+## Handle emoji stuff
+
+```{r emoji I, eval = FALSE, echo=TRUE}
+
+# Start with German tweets only == tweet_data_ger; also RESTART R SESSION AND LOAD DATA AS NEEDED!!!
+
+## Change emoji encoding for emoji stuff
+
+tweet_data_ger$emoji <- unlist(lapply(tweet_data_ger$text, function(row) iconv(row, "latin1", "ASCII", "byte")))
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+
+# Get emoji dict ----------------------------------------------------------
+
+emDict_raw <- read.csv2("emoji_dict_felipe.csv") %>% # has 2,378 entries
+        select(EN, ftu8, unicode) %>% 
+        rename(description = EN, r.encoding = ftu8)
+
+
+
+emDict_raw <- readRDS("emojis_raw.rds")
+
+# plain skin tones
+skin_tones <- c("light skin tone", 
+                "medium-light skin tone", 
+                "medium skin tone",
+                "medium-dark skin tone", 
+                "dark skin tone")
+
+# remove plain skin tones and remove skin tone info in description
+library(Unicode)
+library(forcats)
+
+emDict <- emDict_raw %>%
+        # remove plain skin tones emojis
+        filter(!description %in% skin_tones) %>%
+        # remove emojis with skin tones info, e.g. remove woman: light skin tone and only
+        # keep woman
+        filter(!grepl(":", description)) %>%
+        mutate(description = tolower(description)) %>%
+        mutate(unicode = as.character(unicode)) %>%  #this step is not in the blog post but necessary!!
+        mutate(unicode = as.u_char(unicode))
+
+
+source("emoji_functions.R")
+library(stringr)
+
+# create matching patterns
+
+matchto <- as.character(emDict$r.encoding)
+description <- emDict$description
+
+## ---- most used emoji ----
+# rank emojis by occurence in data
+rank <- emojis_matching(tweet_data_ger$emoji, matchto, description) %>% ## this takes a while to run - just leave it be!!
+        group_by(description) %>% 
+        summarise(n = sum(count)) %>%
+        arrange(-n)
+
+# overall 2,844 emojis captured by the emoji_dictionary
+
+head(rank, 10) # top10
+
+saveRDS(rank, file = "rank_emoji.rds")
+
+## Create individual data sets for males and females
+
+tweet_data_ger <- left_join(tweet_data_ger, diss_data[,c("part_id", "gender", "age")], by = "part_id")
+
+tweet_ger_male <- tweet_data_ger %>% filter(gender == "male")
+
+rank_male <- emojis_matching(tweet_ger_male$emoji, matchto, description) %>% 
+        group_by(description) %>% 
+        summarise(n = sum(count)) %>%
+        arrange(-n)
+
+rank_male %>% top_n(18) # overall males used 192 different emojis from the emojiDict, 1,054 tweets - 1365 emojis
+
+
+saveRDS(rank_male, file = "rank_male.rds")
+
+tweet_ger_female <- tweet_data_ger %>% filter(gender == "female")
+
+rank_female <- emojis_matching(tweet_ger_female$emoji, matchto, description) %>% 
+        group_by(description) %>% 
+        summarise(n = sum(count)) %>%
+        arrange(-n)
+
+rank_female %>% top_n(17) # overall females used 208 different emojis from the emojiDict, 895 tweets - 1489 emojis
+
+saveRDS(rank_female, file = "rank_female.rds")
+
+
+
+## ---- tweets with most emojis ---- this takes a while to run!!! Detach Hmisc!!
+
+
+tweets_count_emojis <- emojis_matching(tweet_data_ger$emoji, matchto, description) %>% 
+        group_by(emoji) %>% 
+        summarize(n = sum(count)) %>%
+        # I add the time created because it makes usermedia_merged %>%
+        #mutate(date = as.Date(created)) %>% group_by(date) %>% summarise(sent = mean(sentiment_score,         na.rm = TRUE)) %>% ggplot + aes(x = date, y = sent) + geom_point() + geom_line() it easiert to         look up certain tweets
+        left_join(tweet_data_ger, by = "emoji") %>% 
+        select(emoji, n, created, screenName, part_id)
+        
+        %>%
+        group_by(part_id) %>% 
+        na.omit() %>% 
+        summarise(n = sum(n))
+
+head(tweets_count_emojis)
+
+saveRDS(tweets_count_emojis, file = "tweets_count_emojis.rds")
+
+tweets_count_emojis <- readRDS("tweets_count_emojis.rds")
+
+tweets_count_emojis <- left_join(tweets_count_emojis, diss_data[,c("part_id", "gender", "age")], by = "part_id")
+
+tweets_count_emojis %>% na.omit() %>% group_by(gender) %>% summarise(tweets = n(), sum = sum(n))
+
+
+## Combining the ranked emojis with the native emojis symbols
+
+emoji_dict$Description <- tolower(emoji_dict$Description)
+
+test <- left_join(rank_female, emoji_dict[, c("Description", "Native")], by = c("description" = "Description"))
+
+```
+
+### Sentiment scores
+
+```{r emoji II, eval = FALSE, echo=TRUE}
+
+library(rvest)
+library(Unicode)
+
+# reference website
+url <- "http://kt.ijs.si/data/Emoji_sentiment_ranking/index.html"
+
+## get emojis from website with sentiment scores
+
+emojis_raw <- url %>%
+        read_html() %>%
+        html_table() %>%
+        data.frame %>%
+        select(-Image.twemoji., -Sentiment.bar.c.i..95..)
+names(emojis_raw) <- c("char", "unicode", "occurrences", "position", "negative", "neutral", 
+                       "positive", "sentiment_score", "description", "block")
+
+saveRDS(emojis_raw, file = "emojis_raw.rds")
+
+# change numeric unicode to character unicode to be able to match with emoji_dict - I do not have the 
+# unicode codepoints
+
+emojis_sent <- emojis_raw %>%
+        mutate(unicode = as.u_char(unicode)) %>%
+        mutate(description = tolower(description))
+
+
+str(emojis_sent)
+
+saveRDS(emojis_sent, file = "emojis_sent.rds")
+
+# merge with emDict to get encoding
+
+emojis_merged <- emojis_sent %>%
+                        left_join(emDict, by = "unicode")
+
+saveRDS(emojis_merged, file = "emojis_merged.rds")
+
+# emojis_raw %>% filter(!unicode %in% emDict$unicode) %>% View
+# we loose 137 emojis that are not in emDict and for which we don't have an R encoding
+# but they seem to be black and white emojis not too often used in social media anyways
+
+new_matchto <- as.character(emojis_merged$r.encoding)
+new_description <- emojis_merged$description.x # select any of the two descriptions x or y!!
+sentiment <- emojis_merged$sentiment_score
+
+tweet_sentiments <- emojis_matching(tweet_data_ger$emoji, new_matchto, new_description, sentiment) %>%
+        group_by(emoji) %>% 
+        na.omit() %>% 
+        summarize(sent_score = mean(sentiment)) 
+#this solves the problem of losing the -1, 0, +1 scale
+# because now all the sentiment scores within a single tweet are averaged instead of multiplied
+
+saveRDS(tweet_sentiments, file = "tweet_sentiments.rds")
+
+tweet_data_ger <- tweet_data_ger %>% left_join(tweet_sentiments, by = "emoji")
+
+saveRDS(tweet_data_ger, file = "tweet_data_ger.rds")
+
+tweet_data_ger %>% group_by(part_id) %>% na.omit() %>% summarize(n = mean(sent_score))
+
+
+# rank with sentiment scores
+
+rank_sent <- left_join(rank, emojis_merged, by = c("description" = "description.x"))
+
+library(lubridate)
+
+sent_year_plot <- tweet_data_ger %>% 
+        mutate(month = month(created, label = TRUE)) %>% 
+        group_by(month) %>% 
+        summarise(sent = mean(sent_score, na.rm = TRUE)) %>% 
+        mutate(sent = round(sent, 2)) %>% 
+        mutate(sent_0 = substring(sprintf("%.2f", sent), 2)) %>%
+        ggplot(aes(x = month, y = sent, group = 1)) + 
+        geom_point() + 
+        geom_smooth(method = "auto", se = FALSE) +
+        ylab("Sentiment score") +
+        theme_matt() +
+        theme(axis.title.x = element_blank()) +
+        geom_text(aes(x = month, y = sent, label = sent_0), vjust = -.71, hjust = .9)
+
+ggsave(sent_year_plot, filename = "sent_year_plot.png", device = "png", 
+       width = 18, height = 18*0.618, units = "cm")
+
+
+# sent data is created in hypothesis testing!!
+
+sent_data <- left_join(tweet_data_ger[,c("part_id", "sent_score", "statusSource", "created")], diss_data[,c("part_id", "age", "age_group" ,"gender", "e", "a", "c", "n", "o", "emoji_dens", "relationship", "edu", "edu2")], by = "part_id")
+
+sent_data <- sent_data %>% na.omit() # 1,789 observations
+
+sent_data$part_id <- as.factor(sent_data$part_id)
+
+sent_year_plot_gender <- sent_data %>% mutate(month = month(created, label = TRUE)) %>% 
+        mutate(gender = fct_recode(gender, "Male" = "male",
+                                                      "Female" = "female")) %>% 
+        group_by(month, gender) %>% 
+        summarise(sent = mean(sent_score)) %>%
+        mutate(sent = round(sent, 2)) %>% 
+        mutate(sent_0 = substring(sprintf("%.2f", sent), 2)) %>% 
+        ggplot(aes(x = month, y = sent, group = 1, col = gender)) + 
+        geom_point() + 
+        scale_color_manual(values = c(Male = "steelblue", Female = "rosybrown1"), guide = FALSE) +
+        ylab("Sentiment score") +
+        theme_matt() +
+        theme(axis.title.x = element_blank(), strip.text = element_text(face = "plain")) +
+        stat_smooth(mapping = aes(month, sent, col = gender), geom = "smooth",
+        position = "dodge", method = "auto", se = FALSE) + 
+        facet_grid(gender~.) +
+        geom_text(aes(x = month, y = sent, label = sent_0), vjust = .85, 
+                  hjust = 1.2, col = "black")
+
+ggsave(sent_year_plot_gender, filename = "sent_year_plot_gender.png", device = "png", 
+       width = 18, height = 18*0.618, units = "cm")
+
+sent_year_plot_gender_age <- sent_data %>% mutate(month = month(created, label = TRUE)) %>% 
+        mutate(gender = fct_recode(gender, "Male" = "male",
+                                                      "Female" = "female")) %>% 
+        group_by(month, gender, age_group) %>% 
+        summarise(sent = mean(sent_score)) %>%
+        mutate(sent = round(sent, 2)) %>% 
+        mutate(sent_0 = substring(sprintf("%.2f", sent), 2)) %>% 
+        ggplot(aes(x = month, y = sent, group = 1, col = gender)) + 
+        geom_point() + 
+        scale_color_manual(values = c(Male = "steelblue", Female = "rosybrown1"), guide = FALSE) +
+        ylab("Sentiment score") +
+        theme_matt() +
+        theme(axis.title.x = element_blank(), strip.text = element_text(face = "plain")) +
+        stat_smooth(mapping = aes(month, sent, col = gender), geom = "smooth",
+        position = "dodge", method = "auto", se = FALSE) + 
+        facet_grid(gender~age_group) +
+        geom_text(aes(x = month, y = sent, label = sent_0), vjust = 0, 
+                  hjust = .5, col = "black", alpha = .85) +
+        scale_x_discrete("month", breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov"), 
+                         labels = c("Jan", "Mar", "May", "Jul", "Sep", "Nov"))
+
+ggsave(sent_year_plot_gender_age, filename = "sent_year_plot_gender_age.png", device = "png", 
+       width = 20, height = 20*0.618, units = "cm")
+
+
+```
+
+
+![Sentiment throughout the year](sent_year_plot.png)
+
+
+
+
+
+

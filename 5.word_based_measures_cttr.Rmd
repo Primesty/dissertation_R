@@ -1,0 +1,321 @@
+---
+title: "word_based_measures_cttr"
+author: "M_Raess"
+date: "June 8, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Formal vs informal
+
+Percentage of denn (formal) vs. weil (informal) both mean 'because'
+
+```{r denn/weil, eval=TRUE, echo=TRUE}
+
+source("formal_informal.R") # detach tidyverse!
+
+formal_informal <- formal_informal(tweet_data_ger)
+
+# Add to diss data
+
+diss_data <- left_join(diss_data, formal_informal, by = "part_id")
+
+## Setting NAs to 0
+
+diss_data$denn_dens[is.na(diss_data$denn_dens)] <- 0
+
+diss_data$weil_dens[is.na(diss_data$weil_dens)] <- 0
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+## More formality stuff - bringing in punctuation from liwc results
+
+```{r punct, eval=TRUE, echo=TRUE}
+
+punct <- liwc_results %>% select(part_id, allpunc, period, comma, colon, semic, qmark, exclam)
+
+punct$part_id <- as.factor(punct$part_id)
+
+punct <- left_join(punct, diss_data[,c("part_id", "gender", "age", "age_group", "edu", "edu2", "e",
+                                       "a", "c", "n", "o")], by = "part_id")
+p_gather <- punct %>% group_by(gender, age_group) %>% summarise(colon = mean(colon), comma = mean(comma),
+                                                                       exclam = mean(exclam), period = mean(period),
+                                                    qmark = mean(qmark), semic = mean(semic))
+
+p_gather <- p_gather %>% gather(`period`, `comma`, `comma`, `colon`, `semic`, `qmark`, `exclam`, key = "punct", value = "percent")
+
+p_gather$punct <- as.factor(p_gather$punct)
+
+p_gather$percent <- round(p_gather$percent, 2)
+
+punct_gender_age <- ggplot(p_gather) + 
+        geom_bar(aes(punct, percent, fill = gender), stat = "identity", position = "dodge", width = 0.65) +
+        facet_grid(age_group~.) + 
+        theme_matt() +
+        theme(axis.title.x = element_blank(), strip.text = element_text(face = "plain")) +
+        scale_fill_manual(values = c(female = "rosybrown1", male = "steelblue"), name = "Gender", 
+                          labels = c("Male", "Female")) +
+        scale_x_discrete(labels = c("colon" = "( : )", "comma" = "( , )", 
+                                    "exclam" = "( ! )", "period" = "( . )", "qmark" = "( ? )", "semic" = "( ; )")) +
+        ylab("Percent (means)") + 
+        geom_text(aes(punct, y = percent, label = percent, group = gender), 
+                  position = position_dodge(width=0.75), vjust = .28, size = 3.3)
+
+ggsave(punct_gender_age, filename = "punct_gender_age.png", device = "png", units = "cm", width = 18, height = 18*0.618)
+
+## Let's run a multivariate regression on all punct with gender and age as predictors
+
+
+multivariate.punct <-lm(cbind(period, comma, colon, semic, qmark, exclam) ~ age + gender + e + a + c + n + o, 
+                     data = punct)
+
+library(car)
+
+Anova(multivariate.punct)
+
+summary(multivariate.punct)
+
+
+```
+
+
+## Calculating CTTR and Yule's K per participant
+
+
+```{r cttr yule, echo=FALSE}
+
+source("cttr_yule.R")
+
+part63 <- cttr_yule(dataframe = tweet_data_ger, part_id = 63)
+
+# do this for all parts and save in their specific objects
+
+cttr_yule_all <- rbind(part1, part2, part3, part4, part5, part6, part7, part8, part9, part10, part11,
+                       part12, part13, part14, part15, part16, part17, part18, part19, part20, part21,
+                       part22, part23, part24, part26, part27, part28, part29, part30, part31, part32,
+                       part33, part34, part35, part36, part37, part38, part39, part40, part41, part42,
+                       part43, part44, part45, part46, part47, part48, part49, part50, part51, part52,
+                       part53, part54, part55, part56, part57, part58, part59, part60, part61, part62,
+                       part63)
+
+cttr_yule_all$part_id <- as.factor(cttr_yule_all$part_id)
+
+saveRDS(cttr_yule_all, file = "cttr_yule_all.rds")
+
+diss_data <- left_join(diss_data, cttr_yule_all, by = "part_id")
+
+saveRDS(diss_data, file = "diss_data.rds")
+
+```
+
+
+### Saving part data as individual text files for LIWC
+
+```{r liwc, echo=TRUE, eval=FALSE}
+
+source("clean_files_liwc.R") #use with tweet_data_ger with clean_w_punct column
+
+clean_files_liwc(tweet_data_ger) # this produces 62 individual .txt-files from the clean text in the dataframe
+
+```
+
+## Importing and wrangling LIWC results
+
+```{r liwc results, echo=TRUE, eval=FALSE}
+
+liwc_results <- read.csv("liwc_results.csv", header = TRUE, check.names = TRUE, stringsAsFactors = FALSE)
+
+names(liwc_results) <- tolower(names(liwc_results))
+
+## Clean up variable names
+
+names(liwc_results) <- gsub("[x0-90-9]+\\.{10}", "", names(liwc_results))
+
+names(liwc_results) <- gsub("\\.", "\\_", names(liwc_results))
+
+# Get rid off unused (empty) vars
+
+liwc_results <- liwc_results %>% select(-(dash:otherp))
+
+saveRDS(object = liwc_results, file = "liwc_results.rds")
+
+liwc_results %>% group_by(part_id) %>% summarise(avg = mean(positive_emotion)) %>% top_n(10) %>% arrange(-avg)
+
+```
+
+```{r sample hashtags-handcode, echo=TRUE, eval=TRUE}
+
+source("hashtag_density.R")
+
+hashtag_corpus <- hash_extract(tweet_data_ger) # this yields 8105 overall with hashtags...
+
+set.seed(666)
+
+hash_hand_coding <- hashtag_corpus[sample(nrow(hashtag_corpus), size = nrow(hashtag_corpus) * 0.2,
+                                          replace = FALSE),] # 20%
+
+hash_hand_coding <- hash_hand_coding %>% group_by(part_id) %>% arrange(part_id)
+hash_hand_coding <- as.data.frame(hash_hand_coding)
+        
+## Hashtag set gets demographic information
+
+hash_hand_coding <- left_join(hash_hand_coding, diss_data[, c("part_id", "gender", "age")], 
+                              by = "part_id")
+
+hash_hand_coding <- hash_hand_coding %>% select(part_id, gender, age, everything())
+
+saveRDS(hash_hand_coding, file = "hash_hand_coding.rds")
+
+write.table(hash_hand_coding, file = "hash_hand_coding.txt", row.names = FALSE, 
+            sep = ",", quote = FALSE)
+
+# Create list with all hashtags to simplify coding...
+
+hash_list <- str_extract_all(string = hash_hand_coding$text, pattern = "#\\w+")
+
+hash_list <- unlist(hash_list)
+
+hash_list <- as.data.frame(hash_list)
+
+write.table(hash_list, file = "hash_list.txt", row.names = FALSE, sep = ",", quote = FALSE)
+
+# Reading in coded hashtags
+
+hashtags_coded <- read.csv2("./hashtags_coded.csv", header = TRUE, sep = ",")
+
+names(hashtags_coded)[6] <- "hash_type"
+
+str(hashtags_coded)
+
+hashtags_coded$hash <- as.character(hashtags_coded$hash)
+
+saveRDS(hashtags_coded, file = "hashtags_coded.rds") # 1625 tweets > 2666 hashtags
+
+
+
+```
+
+### Exploring hashtag subset
+
+```{r sample hashtag subset, echo=TRUE, eval=TRUE}
+
+library(Hmisc)
+library(forcats)
+
+hashtags_coded$age_group <- cut(hashtags_coded$age, breaks = c(18,24,35,45), 
+                           labels = c("20 - 24 years", "25 - 35 years", "36 - 45 years")) 
+#intervals closed on the right by default = not inlcuded in the next interval
+
+hashtags_coded <- hashtags_coded %>% mutate(gender = fct_recode(gender, "Female" = "female",
+                                                                "Male" = "male"),
+                                            pos = fct_relevel(pos, "b",
+                                                              "m",
+                                                              "e"),
+                                            pos = fct_recode(pos, "Beginning" = "b",
+                                                             "Middle" = "m",
+                                                             "End" = "e"))
+
+library(RColorBrewer)
+
+pal <- brewer.pal(11, "RdYlBu")[c(10,8)]
+
+hashtype_gender_age <- hashtags_coded %>% group_by(gender, hash_type, pos, age_group) %>% summarise(n = n()) %>% 
+        ggplot(aes(pos, n, fill = hash_type)) + geom_bar(stat = "identity", 
+                                                         position = "dodge", width = .65) +
+        facet_grid(gender~age_group) +
+        theme_matt() +
+        theme(strip.text = element_text(face = "plain"), axis.title.x = element_blank()) +
+        scale_fill_manual(values = c(c = pal[1], t = pal[2]), 
+                          name = "Hashtag type", labels = c("Commentary", "Tag")) +
+        scale_x_discrete(labels = c("b" = "Beginning", "e" = "End", "m" = "Middle")) +
+        ylab("Number of hashtags") +
+        geom_text(aes(pos, y = n, label = n), 
+                  position = position_dodge(width=0.65), vjust=.12, size = 3.3)
+
+ggsave(hashtype_gender_age, filename = "hashtype_gender_age.png", device = "png", width = 19, height = 19*0.618, units = "cm")
+
+hashtype_gender_lang <- hashtags_coded %>% mutate(lang = fct_recode(lang, 
+                                        "English" = "en",
+                                        "German" = "de")) %>% 
+                group_by(gender, hash_type, pos, lang) %>% 
+                summarise(n = n()) %>% 
+        ggplot(aes(pos, n, fill = hash_type)) + geom_bar(stat = "identity", 
+                                                         position = "dodge", width = .65) +
+        facet_grid(gender~lang) +
+        theme_matt() +
+        theme(strip.text = element_text(face = "plain"), axis.title.x = element_blank()) +
+        scale_fill_manual(values = c(c = pal[1], t = pal[2]), 
+                          name = "Hashtag type", labels = c("Commentary", "Tag")) +
+        scale_x_discrete(labels = c("b" = "Beginning", "e" = "End", "m" = "Middle")) +
+        ylab("Number of hashtags") +
+        geom_text(aes(pos, y = n, label = n), 
+                  position = position_dodge(width=0.65), vjust=.1, size = 3.3)
+
+ggsave(hashtype_gender_lang, filename = "hashtype_gender_lang.png", device = "png", width = 18, height = 18*0.618, units = "cm")
+
+hashtype_lang_pos_age <- hashtags_coded %>% mutate(lang = fct_recode(lang, 
+                                        "English" = "en",
+                                        "German" = "de")) %>% 
+                group_by(hash_type, pos, lang, age_group) %>% 
+                summarise(n = n()) %>% 
+        ggplot(aes(pos, n, fill = hash_type)) + geom_bar(stat = "identity", 
+                                                         position = "dodge", width = .65) +
+        facet_grid(age_group~lang) +
+        theme_matt() +
+        theme(strip.text = element_text(face = "plain"), axis.title.x = element_blank()) +
+        scale_fill_manual(values = c(c = pal[1], t = pal[2]), 
+                          name = "Hashtag type", labels = c("Commentary", "Tag")) +
+        ylab("Number of hashtags") +
+        geom_text(aes(pos, y = n, label = n), 
+                  position = position_dodge(width=0.65), vjust=.29, size = 3.3)
+
+ggsave(hashtype_lang_pos_age, filename = "hashtype_lang_pos_age.png", device = "png", width = 19, height = 19*0.618, units = "cm")
+
+## Descriptive stats
+
+hashtags_coded %>% group_by(gender, hash_type, lang, pos) %>% summarise(n = n())
+
+hash_hand %>% group_by(gender) %>% summarize(n = n())
+
+## Lentgh of hashtags
+
+hashtags_coded$clean <- gsub("#", "", hashtags_coded$hash) #removing #symbol
+
+library(stringi)
+
+hashtags_coded$nchar <- stri_length(str = hashtags_coded$clean)
+
+hashtags_coded %>% group_by(lang, hash_type) %>% summarise(mean = mean(nchar),
+                                                                        sd = sd(nchar)) %>% 
+        arrange(lang)
+
+max(hashtags_coded[hashtags_coded$lang == "de" & hashtags_coded$hash_type == "c",]$nchar) 
+
+# MaxENT = 23, MinENT = 2; MaxENC = 17, MinENC = 4; MaxDET = 44, MinDET = 1; MaxDEC = 34, MinDEC = 2 
+
+
+## Model for hashtags
+
+hash_code <- hashtags_coded %>% group_by(gender, hash_type, pos, age, lang) %>% summarise(n = n())
+
+hash_mod_nb <- glm.nb(n ~ gender*hash_type + age*lang + 
+                       pos*lang + gender*lang, data = hash_code)
+
+summary(hash_mod_nb)
+
+confint(glm.nb(n ~ gender*hash_type + age*lang + 
+                       pos*lang + gender*lang, data = hash_code))
+
+
+## This suggests that females include hashtags (t) more in the syntax b and m
+
+library(pscl)
+
+pR2(hash_mod_nb)
+
+```

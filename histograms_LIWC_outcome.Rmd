@@ -1,0 +1,86 @@
+---
+title: "LIWC_variables_etc"
+author: "M_Raess"
+date: "7/17/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r histograms, eval=TRUE, echo=TRUE, include=TRUE}
+
+library(tidyverse)
+
+diss_data <- readRDS("diss_data.rds")
+
+liwc_use <- readRDS("liwc_use.rds")
+
+liwc_results <- readRDS("liwc_results.rds")
+
+liwc_use <- left_join(liwc_use, diss_data[,c("part_id", "hash_dens", "emoji_dens")], by = "part_id")
+
+liwc_use$part_id <- as.factor(liwc_use$part_id)
+
+liwc_results$part_id <- as.factor(liwc_results$part_id)
+
+liwc_use <- left_join(liwc_use, liwc_results[,c("part_id", "positive_feeling")], by = "part_id")
+
+liwc_use <- left_join(liwc_use, diss_data[,c("part_id", "edu2", "relationship")], by = "part_id")
+
+liwc_use <- liwc_use %>% mutate(E = e, Age = age, Gender = gender, C = c, Emoji_dens = emoji_dens,
+                                A = a, N = n, O = o, Relationship = relationship, Positive_emotion = positive_emotion, Positive_feeling = positive_feeling)
+
+liwc_use <- liwc_use %>% droplevels()
+
+hist(diss_data$hash_dens)
+
+hist(diss_data$emoji_dens)
+
+## LIWC
+
+hist(liwc_use$positive_emotion)
+
+hist(liwc_use$positive_feeling)
+
+hist(liwc_use$negative_emotion)
+
+hist(liwc_use$swear)
+
+hist(liwc_use$tentative)
+
+hist(liwc_use$social)
+
+hist(liwc_use$family)
+
+hist(liwc_use$friends)
+
+hist(liwc_use$occup)
+
+hist(liwc_use$job)
+
+hist(liwc_use$achieve)
+
+hist(liwc_use$money)
+
+hist(liwc_use$sports)
+
+## Lex div
+
+hist(diss_data$cttr)
+
+hist(diss_data$yules_k)
+
+
+# Formality
+
+hist(diss_data$weil_dens)
+
+
+hist(diss_data$denn_dens)
+
+
+```
